@@ -1,0 +1,24 @@
+{
+  "name": "melon_datakit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenAPI-driven mock data platform — schema-aware mock generation, stateful CRUD, streaming, and a full admin console",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter @datakit/server dev & bun run --filter @datakit/web dev",
+    "build": "bun run --filter @datakit/web build",
+    "start": "bun run --filter @datakit/server start & bun run --filter @datakit/web start",
+    "db:generate": "bun run --filter @datakit/server db:generate",
+    "db:migrate": "bun run --filter @datakit/server db:migrate",
+    "db:studio": "bun run --filter @datakit/server db:studio",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "typescript": "^5.9.0"
+  }
+}
