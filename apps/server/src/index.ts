@@ -3,14 +3,17 @@
  *
  * 路由布局：
  *   /_datakit/admin/**  管理控制台 API（显式路由）
- *   /_datakit/stream    SSE 实时推送
- *   /p/:slug/**         mock 流量（Mock Dispatcher catch-all）
+ *   /_datakit/stream    SSE 实时推送（Phase 6）
+ *   /p/:slug/**         mock 流量（Mock Dispatcher）
  */
 import './env';
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import type { HealthResponse } from '@datakit/shared';
 import { closeDb, pingDb } from './db/client';
+import { adminRoutes } from './admin';
+import { mockHandler } from './engine/dispatch';
+import { bootstrapRegistry } from './engine/bootstrap';
 
 const PORT = Number(process.env.SERVER_PORT ?? 4000);
 const startedAt = Date.now();
@@ -25,24 +28,26 @@ const app = new Elysia()
       uptimeSec: Math.floor((Date.now() - startedAt) / 1000),
     };
   })
-  // Mock Dispatcher 占位 —— Phase 1 接入 spec 路由表后接管
-  .all('/p/*', () => {
-    return new Response(
-      JSON.stringify({
-        error: 'mock_dispatcher_not_ready',
-        message: 'Spec 尚未导入，mock dispatcher 在 Phase 1 启用',
-      }),
-      { status: 501, headers: { 'content-type': 'application/json' } }
-    );
-  })
+  // 管理控制台 API
+  .use(adminRoutes)
+  // Mock Dispatcher —— 全部 mock 流量
+  .all('/p/*', ({ request }) => mockHandler(request))
   .onError(({ code, error, set }) => {
     set.status = code === 'NOT_FOUND' ? 404 : 500;
     return {
       error: code === 'NOT_FOUND' ? 'not_found' : 'internal_error',
       message: String(error),
     };
-  })
-  .listen(PORT);
+  });
+
+// 启动：先预热路由表，再 listen
+try {
+  await bootstrapRegistry();
+} catch (err) {
+  console.warn(`[datakit] 路由表预热失败（数据库未就绪？）：${String(err)}`);
+}
+
+app.listen(PORT);
 
 console.log(`[datakit] server listening on http://localhost:${PORT}`);
 console.log(`[datakit] admin health: http://localhost:${PORT}/_datakit/admin/health`);

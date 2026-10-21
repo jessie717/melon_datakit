@@ -63,7 +63,8 @@ export const specs = pgTable(
   },
   (t) => [
     index('specs_project_idx').on(t.projectId),
-    uniqueIndex('specs_checksum_idx').on(t.projectId, t.checksum),
+    // 普通索引（非唯一）：同内容重复导入是幂等成功，不报错
+    index('specs_checksum_idx').on(t.projectId, t.checksum),
   ]
 );
 
