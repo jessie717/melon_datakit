@@ -241,3 +241,47 @@ describe('fieldNameOf', () => {
     expect(fieldNameOf('')).toBe('');
   });
 });
+
+describe('数据质量回归（测试文档冒烟发现）', () => {
+  test('pattern 约束优先于启发式（手机号合规）', () => {
+    const schema = {
+      type: 'object',
+      required: ['phone'],
+      properties: { phone: { type: 'string', pattern: '^1[3-9][0-9]{9}$' } },
+    };
+    for (let seed = 0; seed < 15; seed++) {
+      const v = generateFromSchema(schema, { opSeed: seed, locale: 'zh_CN' }) as Record<string, unknown>;
+      expect(String(v['phone'])).toMatch(/^1[3-9][0-9]{9}$/);
+    }
+  });
+
+  test('description 不再被 /ip/ 误命中', () => {
+    const schema = {
+      type: 'object',
+      required: ['description', 'clientIp'],
+      properties: {
+        description: { type: 'string' },
+        clientIp: { type: 'string' },
+      },
+    };
+    const v = generateFromSchema(schema, { opSeed: 5, locale: 'zh_CN' }) as Record<string, unknown>;
+    // description 走中文句子，不是 IP
+    expect(String(v['description'])).not.toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+    // clientIp（独立段）仍然是 IP
+    expect(String(v['clientIp'])).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
+  });
+
+  test('分页字段有真实感且确定性', () => {
+    const schema = {
+      type: 'object',
+      required: ['page', 'pageSize'],
+      properties: { page: { type: 'integer' }, pageSize: { type: 'integer' } },
+    };
+    const a = generateFromSchema(schema, { opSeed: 8, locale: 'zh_CN' }) as Record<string, number>;
+    const b = generateFromSchema(schema, { opSeed: 8, locale: 'zh_CN' }) as Record<string, number>;
+    expect(a).toEqual(b); // 确定性
+    expect(a['page']).toBeGreaterThanOrEqual(1);
+    expect(a['page']).toBeLessThanOrEqual(10);
+    expect([10, 20, 50, 100]).toContain(a['pageSize']);
+  });
+});

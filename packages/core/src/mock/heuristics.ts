@@ -64,7 +64,11 @@ const HEURISTICS: Heuristic[] = [
   { re: /(code|sku|sn|serial|no$|number$|order_?no|trade_?no)/i, types: ['string'], gen: (f) => f.string.alphanumeric(8).toUpperCase() },
   { re: /url|avatar|image|img|pic|photo|logo/i, types: ['string'], gen: (f) => f.internet.url() },
   { re: /domain/i, types: ['string'], gen: (f) => f.internet.domainName() },
-  { re: /ip/i, types: ['string'], gen: (f) => f.internet.ipv4() },
+  // ip 必须是独立段 —— 防止误匹配 description 里的 "ip"
+  // snake/kebab/全词形式（大小写不敏感）
+  { re: /(^|[_-])ip([_-]|$)/i, types: ['string'], gen: (f) => f.internet.ipv4() },
+  // 驼峰形式（必须大小写敏感，否则 description 里的 ip 会被误命中）
+  { re: /^ip[A-Z]|[a-z]Ip($|[A-Z])/, types: ['string'], gen: (f) => f.internet.ipv4() },
   { re: /(created_?at|updated_?at|deleted_?at|modified|published|published_?at|timestamp$)/i, types: ['string'], gen: (f) => f.date.recent().toISOString() },
   { re: /(^date$|birthday|birth|deadline|day$)/i, types: ['string'], gen: (f) => f.date.recent().toISOString().slice(0, 10) },
   { re: /(desc|description|summary|remark|comment|content|text|reason|note|bio|intro)/i, types: ['string'], gen: (f) => zhSentence(f) },
@@ -73,7 +77,10 @@ const HEURISTICS: Heuristic[] = [
   // —— 数字 ——
   { re: /(price|amount|salary|cost|fee|money|total_?price|pay)/i, types: ['number', 'integer'], gen: (f) => Number(f.commerce.price()) },
   { re: /^age$/i, types: ['number', 'integer'], gen: (f) => f.number.int({ min: 18, max: 65 }) },
-  { re: /(count|total|qty|quantity|num|size|length|stock|inventory)/i, types: ['number', 'integer'], gen: (f) => f.number.int({ min: 0, max: 999 }) },
+  // 分页字段要有真实感（page: 1~10，pageSize: 10/20/50）
+  { re: /^(page|page_?no|page_?index|offset)$/i, types: ['number', 'integer'], gen: (f) => f.number.int({ min: 1, max: 10 }) },
+  { re: /^(page_?size|per_?page|limit|size)$/i, types: ['number', 'integer'], gen: (f) => [10, 20, 50, 100][f.number.int({ min: 0, max: 3 })] },
+  { re: /(count|total|qty|quantity|num|length|stock|inventory)/i, types: ['number', 'integer'], gen: (f) => f.number.int({ min: 0, max: 999 }) },
   { re: /(score|rate|ratio|percent|progress)/i, types: ['number', 'integer'], gen: (f) => f.number.float({ min: 0, max: 100, maxFractionDigits: 2 }) },
   { re: /version/i, types: ['number', 'integer'], gen: (f) => f.number.int({ min: 1, max: 20 }) },
   { re: /(lat|lng|lon|latitude|longitude)/i, types: ['number'], gen: (f) => f.number.float({ min: -180, max: 180, maxFractionDigits: 6 }) },

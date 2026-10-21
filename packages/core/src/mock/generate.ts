@@ -197,15 +197,21 @@ function generateLeaf(s: Schema, path: string, type: string, ctx: Ctx): unknown 
   const fieldName = fieldNameOf(path);
   const seed = fieldSeed(ctx.opSeed, path);
   const f = withDeterministicDates(ctx.faker, seed);
-
-  // 1. 字段名启发式（只吃 type 兼容的）
   f.seed(seed);
-  const heuristic = heuristicValue(f, fieldName, type);
-  if (heuristic !== undefined) return heuristic;
 
-  // 2. format 生成
+  // 0. pattern 约束优先于启发式 —— 生成值必须满足契约
+  //    （如 phone 的 ^1[3-9][0-9]{9}$，启发式随机手机号无法保证）
+  const hasPattern = s['pattern'] !== undefined;
+
+  // 1. 字段名启发式（只吃 type 兼容的；有 pattern 时跳过）
+  if (!hasPattern) {
+    const heuristic = heuristicValue(f, fieldName, type);
+    if (heuristic !== undefined) return heuristic;
+  }
+
+  // 2. format 生成（pattern 会与 format 冲突时也以 pattern 为准 → 走 JSF）
   const format = s['format'];
-  if (type === 'string' && typeof format === 'string') {
+  if (type === 'string' && typeof format === 'string' && !hasPattern) {
     switch (format) {
       case 'uuid':
         return f.string.uuid();

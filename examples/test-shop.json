@@ -1,0 +1,882 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "测试商城 API",
+    "version": "2.1.0",
+    "description": "melon_datakit 全功能测试文档：CRUD、嵌套资源、校验边界、错误响应、分页信封、allOf/oneOf、上传下载 SSE"
+  },
+  "servers": [{ "url": "https://shop.example.com/api" }],
+  "tags": [
+    { "name": "auth", "description": "认证（动作型接口）" },
+    { "name": "users", "description": "用户与收货地址" },
+    { "name": "products", "description": "商品与评价" },
+    { "name": "orders", "description": "订单" },
+    { "name": "files", "description": "文件上传下载" },
+    { "name": "stream", "description": "实时事件" }
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "operationId": "login",
+        "summary": "登录（动作型路径，无状态生成）",
+        "tags": ["auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": { "type": "string", "minLength": 3 },
+                  "password": { "type": "string", "writeOnly": true, "minLength": 6 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["token", "expiresIn"],
+                  "properties": {
+                    "token": { "type": "string", "format": "uuid" },
+                    "expiresIn": { "type": "integer", "minimum": 600, "maximum": 86400 },
+                    "userId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证错误",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorBody" },
+                "example": { "code": 401, "message": "用户名或密码错误" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "summary": "用户列表（分页信封 + 过滤）",
+        "tags": ["users"],
+        "parameters": [
+          { "name": "keyword", "in": "query", "schema": { "type": "string" } },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["active", "inactive", "banned"] }
+          },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "data"],
+                  "properties": {
+                    "code": { "type": "integer", "const": 0 },
+                    "message": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "required": ["items", "total"],
+                      "properties": {
+                        "items": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
+                        "total": { "type": "integer" },
+                        "page": { "type": "integer" },
+                        "pageSize": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createUser",
+        "summary": "创建用户",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewUser" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/User" } }
+            }
+          },
+          "422": {
+            "description": "参数校验失败",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorBody" },
+                "example": { "code": 422, "message": "手机号格式不正确" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{userId}": {
+      "parameters": [
+        { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "get": {
+        "operationId": "getUser",
+        "summary": "用户详情",
+        "tags": ["users"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/User" } }
+            }
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorBody" },
+                "example": { "code": 404, "message": "用户不存在" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateUser",
+        "summary": "更新用户",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewUser" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/User" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteUser",
+        "summary": "删除用户",
+        "tags": ["users"],
+        "responses": { "204": { "description": "deleted" } }
+      }
+    },
+    "/users/{userId}/addresses": {
+      "parameters": [
+        { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listAddresses",
+        "summary": "收货地址列表（嵌套资源）",
+        "tags": ["users"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/components/schemas/Address" } },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAddress",
+        "summary": "新增收货地址",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/Address" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Address" } }
+            }
+          }
+        }
+      }
+    },
+    "/users/{userId}/addresses/{addressId}": {
+      "parameters": [
+        { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "addressId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getAddress",
+        "summary": "地址详情",
+        "tags": ["users"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Address" } }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } } }
+        }
+      },
+      "put": {
+        "operationId": "updateAddress",
+        "summary": "更新地址",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/Address" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Address" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAddress",
+        "summary": "删除地址",
+        "tags": ["users"],
+        "responses": { "204": { "description": "deleted" } }
+      }
+    },
+    "/products": {
+      "get": {
+        "operationId": "listProducts",
+        "summary": "商品列表（多条件过滤）",
+        "tags": ["products"],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["electronics", "clothing", "food", "books", "home"] }
+          },
+          { "name": "keyword", "in": "query", "schema": { "type": "string", "maxLength": 50 } },
+          { "name": "minPrice", "in": "query", "schema": { "type": "number", "minimum": 0 } },
+          { "name": "maxPrice", "in": "query", "schema": { "type": "number", "minimum": 0 } },
+          { "name": "onSale", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "const": 0 },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } },
+                        "total": { "type": "integer" },
+                        "page": { "type": "integer" },
+                        "pageSize": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProduct",
+        "summary": "创建商品",
+        "tags": ["products"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ProductInput" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Product" } }
+            }
+          }
+        }
+      }
+    },
+    "/products/{productId}": {
+      "parameters": [
+        { "name": "productId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getProduct",
+        "summary": "商品详情",
+        "tags": ["products"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Product" } }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } } }
+        }
+      },
+      "put": {
+        "operationId": "updateProduct",
+        "summary": "更新商品",
+        "tags": ["products"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ProductInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Product" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProduct",
+        "summary": "删除商品",
+        "tags": ["products"],
+        "responses": { "204": { "description": "deleted" } }
+      }
+    },
+    "/products/{productId}/reviews": {
+      "parameters": [
+        { "name": "productId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listReviews",
+        "summary": "商品评价（嵌套资源）",
+        "tags": ["products"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/components/schemas/Review" } },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createReview",
+        "summary": "发表评价（星级边界校验）",
+        "tags": ["products"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["rating", "content"],
+                "properties": {
+                  "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+                  "content": { "type": "string", "minLength": 5, "maxLength": 500 },
+                  "images": {
+                    "type": "array",
+                    "maxItems": 9,
+                    "items": { "type": "string", "format": "uri" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Review" } }
+            }
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "summary": "订单列表（状态过滤）",
+        "tags": ["orders"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "paid", "shipped", "delivered", "cancelled", "refunding"]
+            }
+          },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "const": 0 },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } },
+                        "total": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createOrder",
+        "summary": "下单（oneOf 支付方式）",
+        "tags": ["orders"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items", "payment"],
+                "properties": {
+                  "addressId": { "type": "string" },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["productId", "quantity"],
+                      "properties": {
+                        "productId": { "type": "string" },
+                        "quantity": { "type": "integer", "minimum": 1, "maximum": 999 }
+                      }
+                    }
+                  },
+                  "payment": { "$ref": "#/components/schemas/Payment" },
+                  "remark": { "type": "string", "maxLength": 200 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Order" } }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{orderId}": {
+      "parameters": [
+        { "name": "orderId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getOrder",
+        "summary": "订单详情",
+        "tags": ["orders"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Order" } }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "cancelOrder",
+        "summary": "取消订单",
+        "tags": ["orders"],
+        "responses": { "204": { "description": "cancelled" } }
+      }
+    },
+    "/orders/{orderId}/items": {
+      "parameters": [
+        { "name": "orderId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listOrderItems",
+        "summary": "订单明细（嵌套资源）",
+        "tags": ["orders"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "productId": { "type": "string" },
+                          "productName": { "type": "string" },
+                          "price": { "type": "number" },
+                          "quantity": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attachments": {
+      "post": {
+        "operationId": "uploadAttachment",
+        "summary": "上传附件（multipart 流式）",
+        "tags": ["files"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "bizType": {
+                    "type": "string",
+                    "enum": ["avatar", "product-image", "invoice", "other"]
+                  },
+                  "remark": { "type": "string", "maxLength": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["filename", "size"],
+                  "properties": {
+                    "filename": { "type": "string" },
+                    "size": { "type": "integer" },
+                    "sha256": { "type": "string" },
+                    "bizType": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/{reportId}/download": {
+      "parameters": [
+        { "name": "reportId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 536870912 } }
+      ],
+      "get": {
+        "operationId": "downloadReport",
+        "summary": "下载报表（确定性文件流 + Range）",
+        "tags": ["files"],
+        "responses": {
+          "200": {
+            "description": "file content",
+            "content": {
+              "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/stream": {
+      "get": {
+        "operationId": "streamNotifications",
+        "summary": "消息推送（SSE）",
+        "tags": ["stream"],
+        "parameters": [
+          { "name": "count", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "interval", "in": "query", "schema": { "type": "integer", "minimum": 50, "maximum": 10000 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string", "enum": ["order", "promotion", "system"] },
+                    "title": { "type": "string" },
+                    "content": { "type": "string" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "integer" },
+          "message": { "type": "string" }
+        }
+      },
+      "BaseEntity": {
+        "type": "object",
+        "required": ["id", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time", "readOnly": true },
+          "updatedAt": { "type": "string", "format": "date-time", "readOnly": true }
+        }
+      },
+      "User": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          {
+            "type": "object",
+            "required": ["userName", "phone"],
+            "properties": {
+              "userName": { "type": "string", "minLength": 2, "maxLength": 20 },
+              "realName": { "type": "string" },
+              "email": { "type": "string", "format": "email", "nullable": true },
+              "phone": { "type": "string", "pattern": "^1[3-9][0-9]{9}$" },
+              "avatar": { "type": "string", "format": "uri" },
+              "age": { "type": "integer", "minimum": 1, "maximum": 120 },
+              "balance": { "type": "number", "minimum": 0 },
+              "status": {
+                "type": "string",
+                "enum": ["active", "inactive", "banned"],
+                "default": "active"
+              },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "password": { "type": "string", "writeOnly": true }
+            }
+          }
+        ]
+      },
+      "NewUser": {
+        "type": "object",
+        "required": ["userName", "phone"],
+        "properties": {
+          "userName": { "type": "string", "minLength": 2, "maxLength": 20 },
+          "realName": { "type": "string" },
+          "email": { "type": "string", "format": "email", "nullable": true },
+          "phone": { "type": "string", "pattern": "^1[3-9][0-9]{9}$" },
+          "password": { "type": "string", "writeOnly": true, "minLength": 6 }
+        }
+      },
+      "Address": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          {
+            "type": "object",
+            "required": ["receiver", "phone", "province", "city", "detail"],
+            "properties": {
+              "receiver": { "type": "string" },
+              "phone": { "type": "string", "pattern": "^1[3-9][0-9]{9}$" },
+              "province": { "type": "string" },
+              "city": { "type": "string" },
+              "district": { "type": "string" },
+              "detail": { "type": "string", "minLength": 2, "maxLength": 120 },
+              "isDefault": { "type": "boolean" }
+            }
+          }
+        ]
+      },
+      "ProductInput": {
+        "type": "object",
+        "required": ["name", "category", "price"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+          "category": {
+            "type": "string",
+            "enum": ["electronics", "clothing", "food", "books", "home"]
+          },
+          "price": { "type": "number", "minimum": 0.01, "maximum": 999999 },
+          "originalPrice": { "type": "number", "minimum": 0 },
+          "stock": { "type": "integer", "minimum": 0 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "coverImage": { "type": "string", "format": "uri" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Product": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          { "$ref": "#/components/schemas/ProductInput" },
+          {
+            "type": "object",
+            "properties": {
+              "sales": { "type": "integer", "minimum": 0 },
+              "rating": { "type": "number", "minimum": 0, "maximum": 5 },
+              "onSale": { "type": "boolean" },
+              "shop": {
+                "type": "object",
+                "properties": {
+                  "shopId": { "type": "string" },
+                  "shopName": { "type": "string" }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Review": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          {
+            "type": "object",
+            "required": ["rating", "content"],
+            "properties": {
+              "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "content": { "type": "string" },
+              "userName": { "type": "string" },
+              "images": { "type": "array", "items": { "type": "string", "format": "uri" } }
+            }
+          }
+        ]
+      },
+      "Payment": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["method", "openid"],
+            "properties": {
+              "method": { "type": "string", "const": "wechat" },
+              "openid": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["method", "account"],
+            "properties": {
+              "method": { "type": "string", "const": "alipay" },
+              "account": { "type": "string", "format": "email" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["method", "cardNo"],
+            "properties": {
+              "method": { "type": "string", "const": "card" },
+              "cardNo": { "type": "string", "pattern": "^[0-9]{16,19}$" },
+              "cvv": { "type": "string", "writeOnly": true, "pattern": "^[0-9]{3}$" }
+            }
+          }
+        ]
+      },
+      "Order": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          {
+            "type": "object",
+            "required": ["orderNo", "status", "totalAmount"],
+            "properties": {
+              "orderNo": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "paid", "shipped", "delivered", "cancelled", "refunding"]
+              },
+              "totalAmount": { "type": "number", "minimum": 0 },
+              "freight": { "type": "number", "minimum": 0 },
+              "addressId": { "type": "string" },
+              "remark": { "type": "string" },
+              "paidAt": { "type": "string", "format": "date-time" },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "productId": { "type": "string" },
+                    "productName": { "type": "string" },
+                    "price": { "type": "number" },
+                    "quantity": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
