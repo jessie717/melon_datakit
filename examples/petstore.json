@@ -148,6 +148,68 @@
           }
         }
       }
+    },
+    "/upload": {
+      "post": {
+        "operationId": "uploadFile",
+        "summary": "上传文件",
+        "tags": ["files"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "note": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "filename": { "type": "string" },
+                    "size": { "type": "integer" },
+                    "sha256": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stream/events": {
+      "get": {
+        "operationId": "streamEvents",
+        "summary": "事件流（SSE）",
+        "tags": ["stream"],
+        "responses": {
+          "200": {
+            "description": "event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "index": { "type": "integer" },
+                    "message": { "type": "string" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

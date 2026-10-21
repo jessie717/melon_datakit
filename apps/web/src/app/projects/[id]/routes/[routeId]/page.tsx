@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { api, mockPath, RequestError, type Project, type RouteModel } from '@/lib/api';
 import { MethodChip } from '@/components/method-chip';
 import { JsonView, SchemaBadge } from '@/components/json-view';
+import { StreamPanel } from '@/components/stream-panel';
 
 const CRUD_LABEL: Record<string, string> = {
   list: '列表',
@@ -158,13 +159,24 @@ export default function RouteDetailPage() {
             </div>
           </section>
 
-          {/* Phase 2 预告 */}
-          <section className="card border-dashed p-5">
-            <h2 className="eyebrow mb-2">试调</h2>
-            <p className="text-[12px] text-ink-2">
-              Phase 2 接入 mock 生成引擎后，这里可以直接发请求看生成数据。
-            </p>
-          </section>
+          {/* 流式操作 / 试调 */}
+          {route.streaming && project ? (
+            <StreamPanel
+              kind={route.streaming}
+              mockUrl={`http://localhost:4000${mockPath(project.slug)}${route.path}`}
+            />
+          ) : (
+            <section className="card border-dashed p-5">
+              <h2 className="eyebrow mb-2">试调</h2>
+              <p className="text-[12px] text-ink-2">
+                可直接请求 mock 地址查看生成数据：
+                <span className="mono ml-1 text-ink">
+                  http://localhost:4000{project ? mockPath(project.slug) : ''}
+                  {route.path}
+                </span>
+              </p>
+            </section>
+          )}
         </div>
       )}
     </main>
