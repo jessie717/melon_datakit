@@ -6,7 +6,7 @@
  * - 流式响应只记元数据（响应体不落库）
  * - 按项目配置的保留天数自动清理
  */
-import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { projects, requestLogs } from '../db/schema';
 import { publish, type LogBroadcast } from './logbus';

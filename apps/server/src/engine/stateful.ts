@@ -10,13 +10,12 @@
  * 非 REST 路由（kind: none）→ 返回 null，由调用方走无状态生成。
  */
 import {
+  assembleResponse,
   buildListResponse,
   deepMerge,
-  fieldSeed,
   filterEntities,
   generateFromSchema,
   itemSchemaOf,
-  optionalPresent,
   parsePagination,
   type MockValueOptions,
 } from '@datakit/core';
@@ -114,7 +113,6 @@ export async function handleStateful(input: StatefulInput): Promise<Response | n
           : items.slice(pagination.offset);
 
       // 信封结构从响应 schema 生成（保留 code/total 等兄弟字段），再填真实实体
-      const { assembleResponse } = await import('@datakit/core');
       const base = assembleResponse(response?.schema, {
         opSeed: input.opSeed,
         locale: config.locale,
@@ -145,7 +143,6 @@ export async function handleStateful(input: StatefulInput): Promise<Response | n
     }
 
     case 'create': {
-      const { assembleResponse } = await import('@datakit/core');
       const generated = (assembleResponse(response?.schema, {
         opSeed: input.opSeed,
         locale: config.locale,
@@ -183,6 +180,3 @@ export async function handleStateful(input: StatefulInput): Promise<Response | n
 
   return null;
 }
-
-/** 供 dispatcher 判断「该资源类型是否已有数据」（种子状态显示用） */
-export { countEntities, optionalPresent, fieldSeed };

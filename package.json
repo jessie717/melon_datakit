@@ -8,9 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run --filter @datakit/server dev & bun run --filter @datakit/web dev",
+    "dev": "bun scripts/parallel.ts dev",
     "build": "bun run --filter @datakit/web build",
-    "start": "bun run --filter @datakit/server start & bun run --filter @datakit/web start",
+    "start": "bun scripts/parallel.ts start",
     "db:generate": "bun run --filter @datakit/server db:generate",
     "db:migrate": "bun run --filter @datakit/server db:migrate",
     "db:studio": "bun run --filter @datakit/server db:studio",

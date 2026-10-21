@@ -3,7 +3,6 @@
  */
 import { Elysia, t } from 'elysia';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { sse } from 'elysia';
 import type { LogListResponse, RequestLogEntry } from '@datakit/shared';
 import { db } from '../db/client';
 import { requestLogs } from '../db/schema';

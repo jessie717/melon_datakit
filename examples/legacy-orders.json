@@ -1,0 +1,156 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "订单服务（Swagger 2.0 示例）",
+    "version": "1.0.0",
+    "description": "演示 Swagger 2.0 兼容：basePath、body 参数、formData 上传"
+  },
+  "host": "api.example.com",
+  "basePath": "/api/v1",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "summary": "订单列表",
+        "tags": ["orders"],
+        "parameters": [
+          { "name": "status", "in": "query", "type": "string", "enum": ["pending", "paid", "shipped", "cancelled"] },
+          { "name": "page", "in": "query", "type": "integer" },
+          { "name": "size", "in": "query", "type": "integer" }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "rows": { "type": "array", "items": { "$ref": "#/definitions/Order" } },
+                "total": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createOrder",
+        "summary": "下单",
+        "tags": ["orders"],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["sku", "quantity"],
+              "properties": {
+                "sku": { "type": "string" },
+                "quantity": { "type": "integer", "minimum": 1 },
+                "remark": { "type": "string" }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": { "description": "created", "schema": { "$ref": "#/definitions/Order" } }
+        }
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "summary": "订单详情",
+        "tags": ["orders"],
+        "parameters": [
+          { "name": "orderId", "in": "path", "required": true, "type": "string" }
+        ],
+        "responses": {
+          "200": { "description": "ok", "schema": { "$ref": "#/definitions/Order" } },
+          "404": {
+            "description": "not found",
+            "schema": {
+              "type": "object",
+              "properties": { "message": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateOrder",
+        "summary": "更新订单",
+        "tags": ["orders"],
+        "parameters": [
+          { "name": "orderId", "in": "path", "required": true, "type": "string" },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "quantity": { "type": "integer", "minimum": 1 },
+                "remark": { "type": "string" }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "ok", "schema": { "$ref": "#/definitions/Order" } }
+        }
+      },
+      "delete": {
+        "operationId": "cancelOrder",
+        "summary": "取消订单",
+        "tags": ["orders"],
+        "parameters": [
+          { "name": "orderId", "in": "path", "required": true, "type": "string" }
+        ],
+        "responses": { "204": { "description": "cancelled" } }
+      }
+    },
+    "/attachments": {
+      "post": {
+        "operationId": "uploadAttachment",
+        "summary": "上传附件",
+        "tags": ["files"],
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          { "name": "file", "in": "formData", "required": true, "type": "file" },
+          { "name": "bizType", "in": "formData", "type": "string" }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "filename": { "type": "string" },
+                "size": { "type": "integer" },
+                "sha256": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Order": {
+      "type": "object",
+      "required": ["orderId", "sku", "status"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "orderNo": { "type": "string" },
+        "sku": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "price": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "shipped", "cancelled"] },
+        "remark": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
