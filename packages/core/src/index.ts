@@ -8,3 +8,5 @@ export * from './seed';
 export * from './spec';
 export * from './mock';
 export * from './validate';
+export * from './json-path';
+export * from './envelope';

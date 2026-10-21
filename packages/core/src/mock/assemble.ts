@@ -5,6 +5,7 @@
  */
 import type { FieldOverride, JsonSchema } from '@datakit/shared';
 import { generateFromSchema, type MockValueOptions } from './generate';
+import { deepMerge, setByPath } from '../json-path';
 
 export interface AssembleOptions extends MockValueOptions {
   /** spec 的 example（已从响应定义抽出） */
@@ -91,46 +92,6 @@ function callFakerPath(faker: Faker & FakerLike, methodPath: string): unknown {
   return typeof fn === 'function' ? (fn as () => unknown).call(obj) : '';
 }
 
-// ============ 路径读写 / 合并 ============
-
-/** 支持 a.b.c 与 a[0].b 形式 */
-function setByPath(value: unknown, path: string, v: unknown): unknown {
-  const tokens = tokenize(path);
-  return setTokens(value, tokens, 0, v);
-}
-
-function tokenize(path: string): string[] {
-  return path
-    .replace(/\[(\d+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean);
-}
-
-function setTokens(obj: unknown, tokens: string[], i: number, v: unknown): unknown {
-  if (i >= tokens.length) return v;
-  const key = tokens[i]!;
-  if (Array.isArray(obj)) {
-    const idx = Number(key);
-    const copy = [...obj];
-    copy[idx] = setTokens(copy[idx] ?? {}, tokens, i + 1, v);
-    return copy;
-  }
-  const base = (obj && typeof obj === 'object' ? obj : {}) as Record<string, unknown>;
-  return { ...base, [key]: setTokens(base[key] ?? {}, tokens, i + 1, v) };
-}
-
-function deepMerge(base: unknown, patch: unknown): unknown {
-  if (Array.isArray(patch)) return patch;
-  if (patch && typeof patch === 'object') {
-    const b = (base && typeof base === 'object' ? base : {}) as Record<string, unknown>;
-    const out: Record<string, unknown> = { ...b };
-    for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
-      out[k] = deepMerge(out[k], v);
-    }
-    return out;
-  }
-  return patch;
-}
 
 function deepClone<T>(value: T): T {
   return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);

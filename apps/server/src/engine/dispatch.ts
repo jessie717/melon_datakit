@@ -20,6 +20,7 @@ import type {
 } from '@datakit/shared';
 import { getProject, matchRoute, nearestRoutes } from './registry';
 import { getRule } from './rules';
+import { handleStateful } from './stateful';
 
 const MOUNT_RE = /^\/p\/([^/]+)(\/.*)?$/;
 
@@ -146,6 +147,32 @@ export async function mockHandler(request: Request): Promise<Response> {
     fingerprint,
     scenario: 'default',
   });
+
+  // bodyStatic 优先级最高（覆盖一切，含状态化路由）
+  if (rule?.bodyStatic !== undefined) {
+    return json(rule.statusOverride ?? route.successStatus ?? 200, rule.bodyStatic, {
+      'x-mock-seed': String(opSeed),
+      'x-mock-rule': 'bodyStatic',
+    });
+  }
+
+  // —— ⑤ 状态化 CRUD（REST 语义路由落库；其余走无状态生成）——
+  const stateful = await handleStateful({
+    route,
+    projectId: project.projectId,
+    config,
+    ...(rule ? { rule } : {}),
+    params: hit.params,
+    query,
+    ...(parsedBody !== undefined ? { body: parsedBody } : {}),
+    opSeed,
+  });
+  if (stateful) {
+    if (request.method === 'HEAD') {
+      return new Response(null, { status: stateful.status, headers: stateful.headers });
+    }
+    return stateful;
+  }
 
   // 强制状态码（前端联调错误分支）
   const forcedStatus = rule?.statusOverride;
