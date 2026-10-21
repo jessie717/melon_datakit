@@ -1,21 +1,186 @@
 @import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-}
+/* ============ 设计令牌：契约工坊 ============
+   冷调工程纸 + 深板岩墨 + 朱红印（唯一签名色）
+   方法色取自调试工具语义，全站等宽字承载路径/数据
+   ============================================ */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-paper: #f2f4f3;
+  --color-surface: #ffffff;
+  --color-ink: #1b2733;
+  --color-ink-2: #55636e;
+  --color-ink-3: #87949c;
+  --color-rule: #d9dfdc;
+  --color-rule-strong: #c2cbc7;
+
+  --color-seal: #c2402c;
+  --color-seal-soft: #f8e8e4;
+
+  --color-get: #0f7b6c;
+  --color-get-soft: #e2f1ee;
+  --color-post: #3a4ba0;
+  --color-post-soft: #e6e9f6;
+  --color-put: #a86a1c;
+  --color-put-soft: #f6eedd;
+  --color-delete: #c2402c;
+  --color-delete-soft: #f8e8e4;
+
+  --color-code-bg: #edf1ef;
+  --color-warn: #9a6b15;
+  --color-ok: #0f7b6c;
+
+  --font-sans:
+    'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', 'Noto Sans SC',
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:
+    'Cascadia Code', 'JetBrains Mono', 'SF Mono', Consolas, ui-monospace,
+    monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 等宽字是本设计的「性格脸」：路径、方法、JSON、ID 一律 mono */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+/* 标题：紧字距、重字重 —— 文档标题感 */
+.h-display {
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* 眉标：小号大写字母 + 宽字距 —— 技术文档小节标记 */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+/* 契约纸卡片：白面 + 细规线 */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule);
+  border-radius: 2px;
+}
+
+/* 签名元素：朱印 —— 只出现在品牌、生效状态、导入成功 */
+.seal-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-seal);
+  color: #fff;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0;
+  transform: rotate(-2deg);
+}
+
+/* 表单控件 */
+.field {
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 2px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-ink);
+  width: 100%;
+}
+.field:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 1px;
+}
+.field::placeholder {
+  color: var(--color-ink-3);
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+  border-radius: 2px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
+}
+.btn:hover {
+  background: #2a3b4a;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+  border-color: var(--color-rule-strong);
+}
+.btn-ghost:hover {
+  background: var(--color-code-bg);
+}
+
+/* 表格规线：账册感 */
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ledger th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+  font-weight: 500;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-rule-strong);
+}
+.ledger td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-rule);
+}
+.ledger tbody tr:hover {
+  background: var(--color-code-bg);
+}
+
+/* 可访问性：焦点可见 */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
