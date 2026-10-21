@@ -47,6 +47,7 @@ export async function bootstrapRegistry(): Promise<void> {
     .select({
       projectId: projects.id,
       slug: projects.slug,
+      config: projects.config,
       route: routes,
     })
     .from(projects)
@@ -54,11 +55,15 @@ export async function bootstrapRegistry(): Promise<void> {
     .innerJoin(routes, eq(routes.specId, specs.id))
     .where(eq(specs.isActive, true));
 
-  const grouped = new Map<string, { projectId: string; slug: string; routes: RouteModel[] }>();
+  const grouped = new Map<
+    string,
+    { projectId: string; slug: string; seedSalt: string; routes: RouteModel[] }
+  >();
   for (const row of rows) {
     const entry = grouped.get(row.projectId) ?? {
       projectId: row.projectId,
       slug: row.slug,
+      seedSalt: (row.config as { seedSalt?: string })?.seedSalt ?? 'datakit-dev-salt',
       routes: [],
     };
     entry.routes.push(rowToRouteModel(row.route));
@@ -66,7 +71,7 @@ export async function bootstrapRegistry(): Promise<void> {
   }
 
   for (const entry of grouped.values()) {
-    rebuildProject(entry.projectId, entry.slug, entry.routes);
+    rebuildProject(entry.projectId, entry.slug, entry.routes, entry.seedSalt);
     console.log(
       `[datakit] 已加载项目 ${entry.slug} 的路由表（${entry.routes.length} 条路由）`
     );

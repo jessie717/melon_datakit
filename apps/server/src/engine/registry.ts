@@ -10,6 +10,8 @@ import type { HttpMethod, RouteModel } from '@datakit/shared';
 export interface ProjectRegistry {
   projectId: string;
   slug: string;
+  /** mock 确定性盐（项目 config.seedSalt） */
+  seedSalt: string;
   routes: RouteModel[];
   matcher: ReturnType<typeof buildMatcher>;
   /** method + ' ' + 模板路径 → RouteModel */
@@ -26,16 +28,23 @@ export function routeKey(method: string, path: string): string {
 export function rebuildProject(
   projectId: string,
   slug: string,
-  routes: RouteModel[]
+  routes: RouteModel[],
+  seedSalt = 'datakit-dev-salt'
 ): ProjectRegistry {
   const matcher = buildMatcher(routes.map((r) => ({ method: r.method, path: r.path })));
   const byKey = new Map<string, RouteModel>();
   for (const r of routes) {
     byKey.set(routeKey(r.method, r.path), r);
   }
-  const registry: ProjectRegistry = { projectId, slug, routes, matcher, byKey };
+  const registry: ProjectRegistry = { projectId, slug, seedSalt, routes, matcher, byKey };
   bySlug.set(slug, registry);
   return registry;
+}
+
+/** 项目配置变更后同步盐值（不用重建路由表） */
+export function updateProjectSalt(slug: string, seedSalt: string): void {
+  const reg = bySlug.get(slug);
+  if (reg) reg.seedSalt = seedSalt;
 }
 
 export function getProject(slug: string): ProjectRegistry | undefined {

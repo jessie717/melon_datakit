@@ -1,100 +1,132 @@
 /**
  * Mock Dispatcher —— 接收 /p/:slug/** 的全部 mock 流量。
  *
- * Phase 1：路径匹配 + 路由命中返回 501 占位（Phase 2 接管生成）。
- * 纯 fetch handler，可被 Elysia mount，也可独立测试。
+ * 管线：路径匹配 → 响应装配（Phase 2：mock 生成）
+ * 后续阶段在此接：③ 校验 → ④ 故障注入 → ⑤ 状态 CRUD
  */
-import type { RouteModel } from '@datakit/shared';
+import {
+  assembleResponse,
+  operationSeed,
+  requestFingerprint,
+  fnv1a32,
+} from '@datakit/core';
+import type { ResponseSpec, RouteModel } from '@datakit/shared';
 import { getProject, matchRoute, nearestRoutes } from './registry';
 
 const MOUNT_RE = /^\/p\/([^/]+)(\/.*)?$/;
 
-export interface DispatchResult {
-  matched: boolean;
-  slug?: string;
-  route?: RouteModel;
-  params?: Record<string, string>;
-  /** 用于日志的错误信息 */
-  error?: string;
-  status: number;
-}
-
-function json(status: number, body: unknown): Response {
+function json(status: number, body: unknown, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
   });
 }
 
-/** 解析挂载路径 → slug + 路由匹配 */
-export function dispatch(url: URL, method: string): DispatchResult {
+/** Elysia mount 用的 fetch handler */
+export async function mockHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
   const m = MOUNT_RE.exec(url.pathname);
   if (!m) {
-    return {
-      matched: false,
-      status: 404,
-      error: `mock 流量应走 /p/{项目标识}/… 形式，收到 ${url.pathname}`,
-    };
+    return json(404, {
+      error: 'not_found',
+      message: `mock 流量应走 /p/{项目标识}/… 形式，收到 ${url.pathname}`,
+    });
   }
   const slug = m[1]!;
   const rest = m[2] ?? '/';
 
   const project = getProject(slug);
   if (!project) {
-    return {
-      matched: false,
-      slug,
-      status: 404,
-      error: `项目 "${slug}" 不存在或尚未导入 spec`,
-    };
-  }
-
-  const hit = matchRoute(slug, method, rest);
-  if (!hit) {
-    return {
-      matched: false,
-      slug,
-      status: 404,
-      error: `无匹配路由 ${method.toUpperCase()} ${rest}`,
-    };
-  }
-
-  return {
-    matched: true,
-    slug,
-    route: hit.route,
-    params: hit.params,
-    status: 200,
-  };
-}
-
-/** Elysia mount 用的 fetch handler */
-export function mockHandler(request: Request): Response {
-  const url = new URL(request.url);
-  const result = dispatch(url, request.method);
-
-  if (!result.matched) {
-    // 项目存在但路由不匹配 → 附带最接近路由提示
-    const hints =
-      result.error?.startsWith('无匹配路由') && result.slug
-        ? nearestRoutes(result.slug, request.method, url.pathname.replace(`/p/${result.slug}`, ''))
-        : [];
-
     return json(404, {
-      error: result.error?.startsWith('无匹配路由') ? 'route_not_found' : 'not_found',
-      message: result.error,
+      error: 'not_found',
+      message: `项目 "${slug}" 不存在或尚未导入 spec`,
+    });
+  }
+
+  // HEAD 按 HTTP 语义回退到 GET
+  const hit =
+    matchRoute(slug, request.method, rest) ??
+    (request.method === 'HEAD' ? matchRoute(slug, 'GET', rest) : null);
+  if (!hit) {
+    const hints = nearestRoutes(slug, request.method, rest);
+    return json(404, {
+      error: 'route_not_found',
+      message: `无匹配路由 ${request.method.toUpperCase()} ${rest}`,
       ...(hints.length > 0 ? { nearest: hints } : {}),
     });
   }
 
-  // Phase 2：在此接 mock 生成管线（校验 → 故障注入 → 状态 CRUD / 生成）
-  return json(501, {
-    error: 'mock_generation_pending',
-    message: '路由已匹配，mock 生成引擎将在 Phase 2 启用',
-    route: {
-      method: result.route!.method,
-      path: result.route!.path,
-      operationId: result.route!.operationId,
-    },
+  const { route } = hit;
+
+  // SSE 需要长连接处理（Phase 5），先占位
+  if (route.streaming === 'sse') {
+    return json(501, {
+      error: 'streaming_pending',
+      message: 'SSE 流式响应将在 Phase 5 启用',
+    });
+  }
+
+  // 请求指纹（含 body —— 不同输入 → 不同生成结果）
+  let bodyText = '';
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    try {
+      bodyText = await request.text();
+    } catch {
+      bodyText = '';
+    }
+  }
+  const query = Object.fromEntries(url.searchParams.entries());
+  const fingerprint =
+    requestFingerprint(request.method, rest, query) +
+    (bodyText ? ` ${fnv1a32(bodyText).toString(16)}` : '');
+
+  const opSeed = operationSeed({
+    projectSalt: project.seedSalt,
+    operationKey: `${route.method} ${route.path}`,
+    fingerprint,
+    scenario: 'default',
   });
+
+  // 成功响应定义
+  const response = pickResponse(route);
+
+  // 下载流式：Phase 2 先给文本体，Phase 5 做真流式
+  if (route.streaming === 'download') {
+    const content = assembleResponse(response?.schema, {
+      opSeed,
+      locale: 'zh_CN',
+      ...(response?.example !== undefined ? { example: response.example } : {}),
+    });
+    const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    return new Response(text, {
+      status: response?.status ?? 200,
+      headers: {
+        'content-type': response?.contentType ?? 'text/plain; charset=utf-8',
+        'content-disposition': `attachment; filename="mock-${fnv1a32(rest).toString(16)}.txt"`,
+        'x-mock-seed': String(opSeed),
+      },
+    });
+  }
+
+  // 普通 JSON 响应
+  const value = assembleResponse(response?.schema, {
+    opSeed,
+    locale: 'zh_CN',
+    ...(response?.example !== undefined ? { example: response.example } : {}),
+  });
+
+  const res = json(response?.status ?? 200, value, { 'x-mock-seed': String(opSeed) });
+  // HEAD 无响应体（HTTP 语义）
+  if (request.method === 'HEAD') {
+    return new Response(null, { status: res.status, headers: res.headers });
+  }
+  return res;
+}
+
+function pickResponse(route: RouteModel): ResponseSpec | undefined {
+  return (
+    route.responses.find((r) => r.status === route.successStatus) ??
+    route.responses.find((r) => r.status >= 200 && r.status < 300) ??
+    route.responses[0]
+  );
 }
