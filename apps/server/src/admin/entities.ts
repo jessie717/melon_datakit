@@ -8,6 +8,7 @@ import {
   listEntities,
   listResourceTypes,
   resetEntities,
+  updateEntity,
 } from '../engine/state';
 import { getProjectRow } from './projects';
 
@@ -74,6 +75,38 @@ export const entitiesAdmin = new Elysia({ prefix: '/_datakit/admin' })
     },
     {
       body: t.Optional(t.Object({ resourceType: t.Optional(t.String()) })),
+    }
+  )
+  // 编辑单条实体（数据浏览器用）
+  .patch(
+    '/projects/:id/entities',
+    async ({ params, body, set }) => {
+      const project = await getProjectRow(params.id);
+      if (!project) {
+        set.status = 404;
+        return { error: 'not_found', message: `项目 ${params.id} 不存在` };
+      }
+      const row = await updateEntity(params.id, body.resourceType, body.resourceKey, body.data);
+      if (!row) {
+        set.status = 404;
+        return { error: 'not_found', message: `实体 ${body.resourceType}/${body.resourceKey} 不存在` };
+      }
+      return {
+        id: row.id,
+        projectId: params.id,
+        resourceType: body.resourceType,
+        resourceKey: row.resourceKey,
+        data: row.data,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      };
+    },
+    {
+      body: t.Object({
+        resourceType: t.String(),
+        resourceKey: t.String(),
+        data: t.Record(t.String(), t.Unknown()),
+      }),
     }
   );
 

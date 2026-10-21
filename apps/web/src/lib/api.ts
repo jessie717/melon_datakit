@@ -93,6 +93,53 @@ export interface RouteModel {
   schemaHash: string;
 }
 
+
+export interface MockRule {
+  id: string;
+  projectId: string;
+  method: HttpMethod;
+  path: string;
+  enabled: boolean;
+  latencyMs?: number;
+  errorRate?: number;
+  errorStatus?: number;
+  errorBody?: unknown;
+  statusOverride?: number;
+  bodyStatic?: unknown;
+  bodyPatch?: Record<string, unknown>;
+  fieldOverrides: Array<{ path: string; generator: Record<string, unknown> }>;
+  seed?: number;
+  validationMode?: 'strict' | 'lenient' | 'off';
+  note?: string;
+}
+
+export interface EntityRecord {
+  id: string;
+  projectId: string;
+  resourceType: string;
+  resourceKey: string;
+  data: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LogEntry {
+  id: string;
+  projectId: string;
+  method: string;
+  path: string;
+  query: Record<string, string>;
+  headers: Record<string, string>;
+  requestBody?: unknown;
+  status: number;
+  responseBody?: unknown;
+  latencyMs: number;
+  matchedRouteId?: string;
+  error?: string;
+  seed?: number;
+  createdAt: string;
+}
+
 export interface ImportSpecResponse {
   specId: string;
   routeCount: number;
@@ -163,6 +210,89 @@ export const api = {
     request<RouteModel[]>(`/_datakit/admin/projects/${projectId}/routes`),
   listRouteSummaries: (projectId: string) =>
     request<RouteSummary[]>(`/_datakit/admin/projects/${projectId}/routes/summary`),
+
+  listRules: (projectId: string) =>
+    request<MockRule[]>(`/_datakit/admin/projects/${projectId}/rules`),
+  upsertRule: (
+    projectId: string,
+    rule: Partial<MockRule> & { method: string; path: string }
+  ) =>
+    request<MockRule>(`/_datakit/admin/projects/${projectId}/rules`, {
+      method: 'PUT',
+      body: JSON.stringify(rule),
+    }),
+  deleteRule: (projectId: string, ruleId: string) =>
+    request<{ ok: boolean }>(`/_datakit/admin/projects/${projectId}/rules/${ruleId}`, {
+      method: 'DELETE',
+    }),
+
+  listEntityTypes: (projectId: string) =>
+    request<Array<{ resourceType: string; count: number }>>(
+      `/_datakit/admin/projects/${projectId}/entities/types`
+    ),
+  listEntities: (projectId: string, resourceType: string, page = 1, pageSize = 50) =>
+    request<{
+      resourceType: string;
+      total: number;
+      page: number;
+      pageSize: number;
+      items: EntityRecord[];
+    }>(
+      `/_datakit/admin/projects/${projectId}/entities?resourceType=${encodeURIComponent(
+        resourceType
+      )}&page=${page}&pageSize=${pageSize}`
+    ),
+  updateEntity: (
+    projectId: string,
+    body: { resourceType: string; resourceKey: string; data: Record<string, unknown> }
+  ) =>
+    request<EntityRecord>(`/_datakit/admin/projects/${projectId}/entities`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  resetEntities: (projectId: string, resourceType?: string) =>
+    request<{ ok: boolean; deleted: number }>(
+      `/_datakit/admin/projects/${projectId}/entities/reset`,
+      {
+        method: 'POST',
+        body: JSON.stringify(resourceType ? { resourceType } : {}),
+      }
+    ),
+
+  listLogs: (
+    projectId: string,
+    params: { page?: number; pageSize?: number; method?: string; status?: number } = {}
+  ) => {
+    const q = new URLSearchParams();
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    if (params.method) q.set('method', params.method);
+    if (params.status) q.set('status', String(params.status));
+    return request<{
+      total: number;
+      page: number;
+      pageSize: number;
+      items: LogEntry[];
+    }>(`/_datakit/admin/projects/${projectId}/logs?${q.toString()}`);
+  },
+  clearLogs: (projectId: string) =>
+    request<{ ok: boolean; deleted: number }>(`/_datakit/admin/projects/${projectId}/logs`, {
+      method: 'DELETE',
+    }),
+
+  updateProject: (
+    id: string,
+    body: {
+      name?: string;
+      slug?: string;
+      description?: string;
+      config?: Partial<ProjectConfig>;
+    }
+  ) =>
+    request<Project>(`/_datakit/admin/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
 };
 
 /** Mock 流量 Base URL，前端项目把 baseURL 指到这里 */

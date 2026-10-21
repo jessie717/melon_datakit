@@ -7,6 +7,7 @@ import { api, mockPath, RequestError, type Project, type RouteModel } from '@/li
 import { MethodChip } from '@/components/method-chip';
 import { JsonView, SchemaBadge } from '@/components/json-view';
 import { StreamPanel } from '@/components/stream-panel';
+import { RuleEditor } from '@/components/rule-editor';
 
 const CRUD_LABEL: Record<string, string> = {
   list: '列表',
@@ -158,6 +159,9 @@ export default function RouteDetailPage() {
               ))}
             </div>
           </section>
+
+          {/* Mock 规则编辑器 */}
+          {project && <RuleEditor projectId={params.id} route={route} />}
 
           {/* 流式操作 / 试调 */}
           {route.streaming && project ? (

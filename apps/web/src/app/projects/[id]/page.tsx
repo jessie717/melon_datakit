@@ -13,6 +13,7 @@ import {
 } from '@/lib/api';
 import { MethodChip } from '@/components/method-chip';
 import { CopyButton } from '@/components/copy-button';
+import { ProjectNav } from '@/components/project-nav';
 
 const CRUD_LABEL: Record<string, string> = {
   list: '列表',
@@ -121,7 +122,7 @@ export default function ProjectPage() {
       </nav>
 
       {/* 项目头 */}
-      <div className="mb-7 flex flex-wrap items-start justify-between gap-4 border-b border-rule-strong pb-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="h-display text-[24px]">{project?.name ?? '加载中…'}</h1>
           {project?.description && (
@@ -142,6 +143,8 @@ export default function ProjectPage() {
           </div>
         </div>
       </div>
+
+      <ProjectNav projectId={projectId} />
 
       <div className="grid gap-8 lg:grid-cols-[340px_1fr]">
         {/* 左列：文档导入 + 文档历史 */}

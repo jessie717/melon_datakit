@@ -15,6 +15,7 @@ import { adminRoutes } from './admin';
 import { mockHandler } from './engine/dispatch';
 import { bootstrapRegistry } from './engine/bootstrap';
 import { bootstrapRules } from './admin/rules';
+import { startLogCleanup } from './engine/log';
 
 const PORT = Number(process.env.SERVER_PORT ?? 4000);
 const startedAt = Date.now();
@@ -48,6 +49,7 @@ const app = new Elysia()
 try {
   await bootstrapRegistry();
   await bootstrapRules();
+  startLogCleanup();
 } catch (err) {
   console.warn(`[datakit] 预热失败（数据库未就绪？）：${String(err)}`);
 }

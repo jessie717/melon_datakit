@@ -3,6 +3,7 @@
  *
  * 管线：路径匹配 → 规则加载 → ③ 校验 → ④ 故障/延迟注入
  *      → 流式（上传/下载/SSE）| ⑤ 状态 CRUD | ⑥ 无状态生成
+ * 全程记录请求日志（FR-08）：耗时、seed、校验告警、响应体（截断）
  */
 import {
   assembleResponse,
@@ -10,6 +11,7 @@ import {
   operationSeed,
   requestFingerprint,
   validateRequest,
+  type ValidationIssue,
 } from '@datakit/core';
 import type {
   MockRule,
@@ -18,10 +20,11 @@ import type {
   RouteModel,
   ValidationMode,
 } from '@datakit/shared';
-import { getProject, matchRoute, nearestRoutes } from './registry';
+import { getProject, matchRoute, nearestRoutes, type ProjectRegistry } from './registry';
 import { getRule } from './rules';
 import { handleStateful } from './stateful';
 import { handleDownload, handleSse, handleUpload } from './stream';
+import { recordLog } from './log';
 
 type BunServerRef = { timeout(req: Request, seconds: number): void } | null | undefined;
 
@@ -36,8 +39,44 @@ function json(status: number, body: unknown, headers?: Record<string, string>): 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+interface LogCtx {
+  projectId: string;
+  method: string;
+  path: string;
+  query: Record<string, string>;
+  headers: Record<string, string>;
+  requestBody?: unknown;
+  matchedRouteId?: string;
+  startedAt: number;
+  seed?: number;
+  validationWarned: boolean;
+}
+
+function finish(
+  logCtx: LogCtx,
+  response: Response,
+  extra: { responseBody?: unknown; error?: string }
+): Response {
+  recordLog({
+    projectId: logCtx.projectId,
+    method: logCtx.method,
+    path: logCtx.path,
+    query: logCtx.query,
+    headers: logCtx.headers,
+    ...(logCtx.requestBody !== undefined ? { requestBody: logCtx.requestBody } : {}),
+    status: response.status,
+    ...(extra.responseBody !== undefined ? { responseBody: extra.responseBody } : {}),
+    latencyMs: Date.now() - logCtx.startedAt,
+    ...(logCtx.matchedRouteId ? { matchedRouteId: logCtx.matchedRouteId } : {}),
+    ...(extra.error ? { error: extra.error } : {}),
+    ...(logCtx.seed != null ? { seed: logCtx.seed } : {}),
+  });
+  return response;
+}
+
 /** Elysia mount 用的 fetch handler */
 export async function mockHandler(request: Request, server?: BunServerRef): Promise<Response> {
+  const startedAt = Date.now();
   const url = new URL(request.url);
   const m = MOUNT_RE.exec(url.pathname);
   if (!m) {
@@ -49,7 +88,7 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
   const slug = m[1]!;
   const rest = m[2] ?? '/';
 
-  const project = getProject(slug);
+  const project: ProjectRegistry | undefined = getProject(slug);
   if (!project) {
     return json(404, {
       error: 'not_found',
@@ -57,20 +96,37 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
     });
   }
 
+  const query = Object.fromEntries(url.searchParams.entries());
+  const headers = Object.fromEntries(request.headers.entries());
+  const logCtx: LogCtx = {
+    projectId: project.projectId,
+    method: request.method,
+    path: rest,
+    query,
+    headers,
+    startedAt,
+    validationWarned: false,
+  };
+
   // HEAD 按 HTTP 语义回退到 GET
   const hit =
     matchRoute(slug, request.method, rest) ??
     (request.method === 'HEAD' ? matchRoute(slug, 'GET', rest) : null);
   if (!hit) {
     const hints = nearestRoutes(slug, request.method, rest);
-    return json(404, {
-      error: 'route_not_found',
-      message: `无匹配路由 ${request.method.toUpperCase()} ${rest}`,
-      ...(hints.length > 0 ? { nearest: hints } : {}),
-    });
+    return finish(
+      logCtx,
+      json(404, {
+        error: 'route_not_found',
+        message: `无匹配路由 ${request.method.toUpperCase()} ${rest}`,
+        ...(hints.length > 0 ? { nearest: hints } : {}),
+      }),
+      { error: 'route_not_found' }
+    );
   }
 
   const { route } = hit;
+  logCtx.matchedRouteId = route.id;
   const config = project.config;
   const rule = getRule(project.projectId, route.method, route.path);
 
@@ -92,9 +148,7 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
       parsedBody = bodyText;
     }
   }
-
-  const query = Object.fromEntries(url.searchParams.entries());
-  const headers = Object.fromEntries(request.headers.entries());
+  if (parsedBody !== undefined) logCtx.requestBody = parsedBody;
 
   // —— ③ 请求校验（multipart 上传不做 body 校验）——
   const mode: ValidationMode = rule?.validationMode ?? config.validationMode;
@@ -109,8 +163,11 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
     mode
   );
   if (validation.shouldReject) {
-    return buildValidationErrorResponse(route, validation.issues);
+    return finish(logCtx, buildValidationErrorResponse(route, validation.issues), {
+      error: 'validation_rejected',
+    });
   }
+  logCtx.validationWarned = validation.issues.length > 0;
 
   // —— ④ 故障 / 延迟注入 ——
   const latencyMs = rule?.latencyMs ?? config.defaultLatencyMs;
@@ -121,13 +178,14 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
     const rate = rule?.errorRate ?? config.defaultErrorRate;
     if (rate > 0 && Math.random() < rate) {
       const status = rule?.errorStatus ?? 500;
-      return json(
-        status,
-        rule?.errorBody ?? {
-          error: 'mock_error',
-          message: `按规则注入的错误（errorRate=${rate}）`,
-        },
-        { 'x-mock-seed': 'error', 'x-mock-fault': 'error-rate' }
+      const errBody = rule?.errorBody ?? {
+        error: 'mock_error',
+        message: `按规则注入的错误（errorRate=${rate}）`,
+      };
+      return finish(
+        logCtx,
+        json(status, errBody, { 'x-mock-seed': 'error', 'x-mock-fault': 'error-rate' }),
+        { responseBody: errBody, error: 'fault_injected' }
       );
     }
   }
@@ -142,25 +200,43 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
     fingerprint,
     scenario: 'default',
   });
+  logCtx.seed = opSeed;
 
   // bodyStatic 优先级最高（覆盖一切）
   if (rule?.bodyStatic !== undefined) {
-    return json(rule.statusOverride ?? route.successStatus ?? 200, rule.bodyStatic, {
-      'x-mock-seed': String(opSeed),
-      'x-mock-rule': 'bodyStatic',
-    });
+    return finish(
+      logCtx,
+      json(rule.statusOverride ?? route.successStatus ?? 200, rule.bodyStatic, {
+        'x-mock-seed': String(opSeed),
+        'x-mock-rule': 'bodyStatic',
+      }),
+      { responseBody: rule.bodyStatic }
+    );
   }
 
   // —— 流式处理（上传/下载/SSE）——
   if (route.streaming) {
     const ctx = { request, route, config, ...(rule ? { rule } : {}), opSeed, server };
     switch (route.streaming) {
-      case 'upload':
-        return handleUpload(ctx);
+      case 'upload': {
+        const res = await handleUpload(ctx);
+        // 响应体很小（上传结果 JSON）→ 读一份副本落日志
+        let body: unknown;
+        try {
+          body = await res.clone().json();
+        } catch {
+          body = { stream: 'upload' };
+        }
+        return finish(logCtx, res, { responseBody: body });
+      }
       case 'download':
-        return handleDownload(ctx);
+        return finish(logCtx, handleDownload(ctx), {
+          responseBody: { stream: 'download', seed: opSeed },
+        });
       case 'sse':
-        return handleSse(ctx);
+        return finish(logCtx, handleSse(ctx), {
+          responseBody: { stream: 'sse', seed: opSeed },
+        });
     }
   }
 
@@ -176,10 +252,17 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
     opSeed,
   });
   if (stateful) {
-    if (request.method === 'HEAD') {
-      return new Response(null, { status: stateful.status, headers: stateful.headers });
+    let body: unknown;
+    try {
+      body = stateful.status === 204 ? null : await stateful.clone().json();
+    } catch {
+      body = undefined;
     }
-    return stateful;
+    const res =
+      request.method === 'HEAD'
+        ? new Response(null, { status: stateful.status, headers: stateful.headers })
+        : stateful;
+    return finish(logCtx, res, { responseBody: body });
   }
 
   // —— ⑥ 无状态生成 ——
@@ -199,20 +282,21 @@ export async function mockHandler(request: Request, server?: BunServerRef): Prom
 
   const res = json(forcedStatus ?? response?.status ?? 200, value, {
     'x-mock-seed': String(opSeed),
-    ...(validation.issues.length > 0 ? { 'x-mock-validation': 'warned' } : {}),
+    ...(logCtx.validationWarned ? { 'x-mock-validation': 'warned' } : {}),
   });
-  // HEAD 无响应体（HTTP 语义）
   if (request.method === 'HEAD') {
-    return new Response(null, { status: res.status, headers: res.headers });
+    return finish(logCtx, new Response(null, { status: res.status, headers: res.headers }), {
+      responseBody: value,
+    });
   }
-  return res;
+  return finish(logCtx, res, { responseBody: value });
 }
 
 // ============ 校验错误响应 ============
 
 function buildValidationErrorResponse(
   route: RouteModel,
-  issues: Array<{ in: string; name: string; keyword: string; message: string }>
+  issues: ValidationIssue[]
 ): Response {
   // spec 自己定义了 400/422 → 优先套用 spec 的形状（example 优先）
   const specError =

@@ -7,12 +7,14 @@ import { specsAdmin } from './specs';
 import { routesAdmin } from './routes';
 import { rulesAdmin } from './rules';
 import { entitiesAdmin } from './entities';
+import { logsAdmin } from './logs';
 
 export const adminRoutes = new Elysia({ name: 'admin' })
   .use(projectsAdmin)
   .use(specsAdmin)
   .use(routesAdmin)
   .use(rulesAdmin)
-  .use(entitiesAdmin);
+  .use(entitiesAdmin)
+  .use(logsAdmin);
 
 export { toProjectDto, getProjectRow } from './projects';
