@@ -14,6 +14,7 @@ import { closeDb, pingDb } from './db/client';
 import { adminRoutes } from './admin';
 import { mockHandler } from './engine/dispatch';
 import { bootstrapRegistry } from './engine/bootstrap';
+import { bootstrapRules } from './admin/rules';
 
 const PORT = Number(process.env.SERVER_PORT ?? 4000);
 const startedAt = Date.now();
@@ -40,11 +41,12 @@ const app = new Elysia()
     };
   });
 
-// 启动：先预热路由表，再 listen
+// 启动：先预热路由表与规则缓存，再 listen
 try {
   await bootstrapRegistry();
+  await bootstrapRules();
 } catch (err) {
-  console.warn(`[datakit] 路由表预热失败（数据库未就绪？）：${String(err)}`);
+  console.warn(`[datakit] 预热失败（数据库未就绪？）：${String(err)}`);
 }
 
 app.listen(PORT);

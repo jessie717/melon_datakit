@@ -16,7 +16,7 @@ import {
   checkConflicts,
   SpecParseError,
 } from '@datakit/core';
-import type { ImportSpecResponse, RouteModel, SpecRecord } from '@datakit/shared';
+import type { ImportSpecResponse, ProjectConfig, RouteModel, SpecRecord } from '@datakit/shared';
 import { db } from '../db/client';
 import { routes, specs } from '../db/schema';
 import { rebuildProject } from '../engine/registry';
@@ -47,7 +47,7 @@ async function checksumOf(text: string): Promise<string> {
 async function importSpecText(input: {
   projectId: string;
   slug: string;
-  seedSalt: string;
+  config: Partial<ProjectConfig>;
   sourceType: 'url' | 'file';
   sourceUri: string;
   text: string;
@@ -152,7 +152,7 @@ async function importSpecText(input: {
   });
 
   // 6. 重建内存路由表（spec 热更新，不重启进程）
-  rebuildProject(input.projectId, input.slug, routeModels, input.seedSalt);
+  rebuildProject(input.projectId, input.slug, routeModels, input.config);
 
   // 7. schemaHash 变更告警（FR-01.9：提示复核规则）
   const warnings = [...parseWarnings, ...validationWarnings, ...normalizeWarnings];
@@ -221,7 +221,7 @@ export const specsAdmin = new Elysia({ prefix: '/_datakit/admin' })
           const result = await importSpecText({
             projectId: project.id,
             slug: project.slug,
-            seedSalt: (project.config as { seedSalt?: string })?.seedSalt ?? 'datakit-dev-salt',
+            config: (project.config as Partial<ProjectConfig>) ?? {},
             sourceType: 'url',
             sourceUri: body.sourceUri!,
             text,
@@ -277,7 +277,7 @@ export const specsAdmin = new Elysia({ prefix: '/_datakit/admin' })
         const result = await importSpecText({
           projectId: project.id,
           slug: project.slug,
-          seedSalt: (project.config as { seedSalt?: string })?.seedSalt ?? 'datakit-dev-salt',
+          config: (project.config as Partial<ProjectConfig>) ?? {},
           sourceType: 'file',
           sourceUri: file.name || 'uploaded',
           text,

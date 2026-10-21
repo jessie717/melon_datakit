@@ -1,17 +1,25 @@
 /**
  * Mock Dispatcher —— 接收 /p/:slug/** 的全部 mock 流量。
  *
- * 管线：路径匹配 → 响应装配（Phase 2：mock 生成）
- * 后续阶段在此接：③ 校验 → ④ 故障注入 → ⑤ 状态 CRUD
+ * 管线：路径匹配 → 规则加载 → ③ 校验 → ④ 故障/延迟注入 → ⑥ mock 生成
+ * 后续阶段在此接：⑤ 状态 CRUD（Phase 4）
  */
 import {
   assembleResponse,
+  fnv1a32,
   operationSeed,
   requestFingerprint,
-  fnv1a32,
+  validateRequest,
 } from '@datakit/core';
-import type { ResponseSpec, RouteModel } from '@datakit/shared';
+import type {
+  MockRule,
+  ProjectConfig,
+  ResponseSpec,
+  RouteModel,
+  ValidationMode,
+} from '@datakit/shared';
 import { getProject, matchRoute, nearestRoutes } from './registry';
+import { getRule } from './rules';
 
 const MOUNT_RE = /^\/p\/([^/]+)(\/.*)?$/;
 
@@ -21,6 +29,8 @@ function json(status: number, body: unknown, headers?: Record<string, string>): 
     headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
   });
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Elysia mount 用的 fetch handler */
 export async function mockHandler(request: Request): Promise<Response> {
@@ -57,6 +67,8 @@ export async function mockHandler(request: Request): Promise<Response> {
   }
 
   const { route } = hit;
+  const config = project.config;
+  const rule = getRule(project.projectId, route.method, route.path);
 
   // SSE 需要长连接处理（Phase 5），先占位
   if (route.streaming === 'sse') {
@@ -66,7 +78,7 @@ export async function mockHandler(request: Request): Promise<Response> {
     });
   }
 
-  // 请求指纹（含 body —— 不同输入 → 不同生成结果）
+  // 请求体
   let bodyText = '';
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     try {
@@ -75,31 +87,88 @@ export async function mockHandler(request: Request): Promise<Response> {
       bodyText = '';
     }
   }
+  let parsedBody: unknown;
+  if (bodyText) {
+    try {
+      parsedBody = JSON.parse(bodyText);
+    } catch {
+      parsedBody = bodyText;
+    }
+  }
+
   const query = Object.fromEntries(url.searchParams.entries());
+  const headers = Object.fromEntries(request.headers.entries());
+
+  // —— ③ 请求校验 ——
+  const mode: ValidationMode = rule?.validationMode ?? config.validationMode;
+  const validation = validateRequest(
+    {
+      route,
+      params: hit.params,
+      query,
+      headers,
+      ...(parsedBody !== undefined ? { body: parsedBody } : {}),
+    },
+    mode
+  );
+  if (validation.shouldReject) {
+    return buildValidationErrorResponse(route, validation.issues, project.projectId, config);
+  }
+
+  // —— ④ 故障 / 延迟注入 ——
+  const latencyMs = rule?.latencyMs ?? config.defaultLatencyMs;
+  if (latencyMs > 0) await sleep(latencyMs);
+
+  if (rule?.enabled !== false) {
+    // 错误率（规则覆盖项目默认）—— 概率性，故意引入非确定性
+    const rate = rule?.errorRate ?? config.defaultErrorRate;
+    if (rate > 0 && Math.random() < rate) {
+      const status = rule?.errorStatus ?? 500;
+      return json(
+        status,
+        rule?.errorBody ?? {
+          error: 'mock_error',
+          message: `按规则注入的错误（errorRate=${rate}）`,
+        },
+        { 'x-mock-seed': 'error', 'x-mock-fault': 'error-rate' }
+      );
+    }
+  }
+
+  // —— 生成（规则可覆盖 seed / body / 字段）——
   const fingerprint =
     requestFingerprint(request.method, rest, query) +
     (bodyText ? ` ${fnv1a32(bodyText).toString(16)}` : '');
 
-  const opSeed = operationSeed({
-    projectSalt: project.seedSalt,
+  const opSeed = rule?.seed ?? operationSeed({
+    projectSalt: config.seedSalt,
     operationKey: `${route.method} ${route.path}`,
     fingerprint,
     scenario: 'default',
   });
 
-  // 成功响应定义
-  const response = pickResponse(route);
+  // 强制状态码（前端联调错误分支）
+  const forcedStatus = rule?.statusOverride;
+  const response =
+    (forcedStatus !== undefined && forcedStatus !== null
+      ? route.responses.find((r) => r.status === forcedStatus)
+      : undefined) ?? pickResponse(route);
 
-  // 下载流式：Phase 2 先给文本体，Phase 5 做真流式
+  const assembleOpts = {
+    opSeed,
+    locale: config.locale,
+    ...(response?.example !== undefined ? { example: response.example } : {}),
+    ...(rule?.bodyStatic !== undefined ? { bodyStatic: rule.bodyStatic } : {}),
+    ...(rule?.bodyPatch !== undefined ? { bodyPatch: rule.bodyPatch } : {}),
+    ...(rule?.fieldOverrides?.length ? { fieldOverrides: rule.fieldOverrides } : {}),
+  };
+
+  // 下载流式：Phase 3 仍是文本体，Phase 5 做真流式
   if (route.streaming === 'download') {
-    const content = assembleResponse(response?.schema, {
-      opSeed,
-      locale: 'zh_CN',
-      ...(response?.example !== undefined ? { example: response.example } : {}),
-    });
+    const content = assembleResponse(response?.schema, assembleOpts);
     const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
     return new Response(text, {
-      status: response?.status ?? 200,
+      status: forcedStatus ?? response?.status ?? 200,
       headers: {
         'content-type': response?.contentType ?? 'text/plain; charset=utf-8',
         'content-disposition': `attachment; filename="mock-${fnv1a32(rest).toString(16)}.txt"`,
@@ -108,19 +177,57 @@ export async function mockHandler(request: Request): Promise<Response> {
     });
   }
 
-  // 普通 JSON 响应
-  const value = assembleResponse(response?.schema, {
-    opSeed,
-    locale: 'zh_CN',
-    ...(response?.example !== undefined ? { example: response.example } : {}),
+  const value = assembleResponse(response?.schema, assembleOpts);
+  const res = json(forcedStatus ?? response?.status ?? 200, value, {
+    'x-mock-seed': String(opSeed),
+    ...(validation.issues.length > 0 ? { 'x-mock-validation': 'warned' } : {}),
   });
-
-  const res = json(response?.status ?? 200, value, { 'x-mock-seed': String(opSeed) });
   // HEAD 无响应体（HTTP 语义）
   if (request.method === 'HEAD') {
     return new Response(null, { status: res.status, headers: res.headers });
   }
   return res;
+}
+
+// ============ 校验错误响应 ============
+
+function buildValidationErrorResponse(
+  route: RouteModel,
+  issues: Array<{ in: string; name: string; keyword: string; message: string }>,
+  _projectId: string,
+  _config: ProjectConfig
+): Response {
+  // spec 自己定义了 400/422 → 优先套用 spec 的形状（example 优先）
+  const specError =
+    route.responses.find((r) => r.status === 422) ??
+    route.responses.find((r) => r.status === 400);
+
+  const details = issues.map((i) => ({
+    in: i.in,
+    name: i.name,
+    keyword: i.keyword,
+    message: i.message,
+  }));
+
+  let body: unknown;
+  if (specError && specError.example !== undefined && typeof specError.example === 'object') {
+    // 以 spec 示例为底，把校验细节并进去（不覆盖示例已有字段）
+    body = { ...(specError.example as Record<string, unknown>), details };
+  } else if (specError?.schema && Object.keys(specError.schema).length > 0) {
+    body = {
+      error: 'validation_error',
+      message: '请求参数不符合接口文档定义',
+      details,
+    };
+  } else {
+    body = {
+      error: 'validation_error',
+      message: '请求参数不符合接口文档定义',
+      details,
+    };
+  }
+
+  return json(specError?.status ?? 400, body, { 'x-mock-validation': 'rejected' });
 }
 
 function pickResponse(route: RouteModel): ResponseSpec | undefined {

@@ -12,7 +12,7 @@ import {
 import { checkConflicts } from '@datakit/core';
 import { db } from '../db/client';
 import { projects } from '../db/schema';
-import { dropProject, updateProjectSalt } from '../engine/registry';
+import { dropProject, updateProjectConfig } from '../engine/registry';
 
 export function toProjectDto(row: typeof projects.$inferSelect): Project {
   return {
@@ -137,7 +137,7 @@ export const projectsAdmin = new Elysia({ prefix: '/_datakit/admin' })
         dropProject(existing.slug);
       } else if (body.config) {
         // 盐值变更同步到内存 registry（不重建路由表）
-        updateProjectSalt(existing.slug, String(mergedConfig.seedSalt));
+        updateProjectConfig(existing.slug, mergedConfig);
       }
       return toProjectDto(row!);
     },

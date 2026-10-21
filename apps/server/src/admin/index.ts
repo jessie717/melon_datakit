@@ -5,10 +5,12 @@ import { Elysia } from 'elysia';
 import { projectsAdmin } from './projects';
 import { specsAdmin } from './specs';
 import { routesAdmin } from './routes';
+import { rulesAdmin } from './rules';
 
 export const adminRoutes = new Elysia({ name: 'admin' })
   .use(projectsAdmin)
   .use(specsAdmin)
-  .use(routesAdmin);
+  .use(routesAdmin)
+  .use(rulesAdmin);
 
 export { toProjectDto, getProjectRow } from './projects';

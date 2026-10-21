@@ -7,3 +7,4 @@ export * from './match';
 export * from './seed';
 export * from './spec';
 export * from './mock';
+export * from './validate';

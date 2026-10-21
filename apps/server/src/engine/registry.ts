@@ -5,13 +5,18 @@
  * 不动 Elysia 实例。这是选 Dispatcher 而非 app.route() 逐条注册的核心理由。
  */
 import { buildMatcher } from '@datakit/core';
-import type { HttpMethod, RouteModel } from '@datakit/shared';
+import {
+  DEFAULT_PROJECT_CONFIG,
+  type HttpMethod,
+  type ProjectConfig,
+  type RouteModel,
+} from '@datakit/shared';
 
 export interface ProjectRegistry {
   projectId: string;
   slug: string;
-  /** mock 确定性盐（项目 config.seedSalt） */
-  seedSalt: string;
+  /** 项目配置（seedSalt / validationMode / 默认延迟、错误率…） */
+  config: ProjectConfig;
   routes: RouteModel[];
   matcher: ReturnType<typeof buildMatcher>;
   /** method + ' ' + 模板路径 → RouteModel */
@@ -29,22 +34,29 @@ export function rebuildProject(
   projectId: string,
   slug: string,
   routes: RouteModel[],
-  seedSalt = 'datakit-dev-salt'
+  config: Partial<ProjectConfig> = {}
 ): ProjectRegistry {
   const matcher = buildMatcher(routes.map((r) => ({ method: r.method, path: r.path })));
   const byKey = new Map<string, RouteModel>();
   for (const r of routes) {
     byKey.set(routeKey(r.method, r.path), r);
   }
-  const registry: ProjectRegistry = { projectId, slug, seedSalt, routes, matcher, byKey };
+  const registry: ProjectRegistry = {
+    projectId,
+    slug,
+    config: { ...DEFAULT_PROJECT_CONFIG, ...config },
+    routes,
+    matcher,
+    byKey,
+  };
   bySlug.set(slug, registry);
   return registry;
 }
 
-/** 项目配置变更后同步盐值（不用重建路由表） */
-export function updateProjectSalt(slug: string, seedSalt: string): void {
+/** 项目配置变更后同步（不用重建路由表） */
+export function updateProjectConfig(slug: string, config: Partial<ProjectConfig>): void {
   const reg = bySlug.get(slug);
-  if (reg) reg.seedSalt = seedSalt;
+  if (reg) reg.config = { ...reg.config, ...config };
 }
 
 export function getProject(slug: string): ProjectRegistry | undefined {

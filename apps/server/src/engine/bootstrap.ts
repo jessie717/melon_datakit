@@ -2,8 +2,8 @@
  * 启动预热 —— 从 DB 加载所有 active spec 的路由表进内存。
  * 进程重启后 dispatcher 立即可用，无需重新导入 spec。
  */
-import { eq, sql } from 'drizzle-orm';
-import type { RouteModel } from '@datakit/shared';
+import { eq } from 'drizzle-orm';
+import type { ProjectConfig, RouteModel } from '@datakit/shared';
 import { db } from '../db/client';
 import { projects, routes, specs } from '../db/schema';
 import { rebuildProject } from './registry';
@@ -57,13 +57,18 @@ export async function bootstrapRegistry(): Promise<void> {
 
   const grouped = new Map<
     string,
-    { projectId: string; slug: string; seedSalt: string; routes: RouteModel[] }
+    {
+      projectId: string;
+      slug: string;
+      config: Partial<ProjectConfig>;
+      routes: RouteModel[];
+    }
   >();
   for (const row of rows) {
     const entry = grouped.get(row.projectId) ?? {
       projectId: row.projectId,
       slug: row.slug,
-      seedSalt: (row.config as { seedSalt?: string })?.seedSalt ?? 'datakit-dev-salt',
+      config: (row.config as Partial<ProjectConfig>) ?? {},
       routes: [],
     };
     entry.routes.push(rowToRouteModel(row.route));
@@ -71,7 +76,7 @@ export async function bootstrapRegistry(): Promise<void> {
   }
 
   for (const entry of grouped.values()) {
-    rebuildProject(entry.projectId, entry.slug, entry.routes, entry.seedSalt);
+    rebuildProject(entry.projectId, entry.slug, entry.routes, entry.config);
     console.log(
       `[datakit] 已加载项目 ${entry.slug} 的路由表（${entry.routes.length} 条路由）`
     );
